@@ -129,7 +129,41 @@ contract MainchainGatewayV3 is
    * @inheritdoc IMainchainGatewayV3
    */
   function requestDepositFor(Transfer.Request calldata _request) external payable virtual whenNotPaused {
+    // A non-native deposit request with msg.value is invalid
+    if (_request.tokenAddr != address(0) && msg.value != 0) {
+      revert ErrInvalidRequest();
+    }
     _requestDepositFor(_request, msg.sender);
+  }
+
+  /**
+   * @inheritdoc IMainchainGatewayV3
+   */
+  function bulkRequestDepositFor(Transfer.Request[] calldata _requests) external payable virtual whenNotPaused {
+    // The _requestDepositFor does not work correctly when there are
+    // more than 1 native Ether deposit request in the bulk deposit.
+    // So we need to check here and revert in that case.
+    bool _hasNativeTokenRequest = false;
+    for (uint256 _i; _i < _requests.length;) {
+      if (_requests[_i].tokenAddr == address(0)) {
+        if (_hasNativeTokenRequest) {
+          revert ErrMoreThanOneNativeTokenRequests();
+        } else {
+          _hasNativeTokenRequest = true;
+        }
+      }
+
+      _requestDepositFor(_requests[_i], msg.sender);
+
+      unchecked {
+        _i++;
+      }
+    }
+
+    // Non-native deposit requests with msg.value are invalid
+    if (!_hasNativeTokenRequest && msg.value != 0) {
+      revert ErrInvalidRequest();
+    }
   }
 
   /**
@@ -140,6 +174,29 @@ contract MainchainGatewayV3 is
     Signature[] calldata _signatures
   ) external virtual whenNotPaused returns (bool _locked) {
     return _submitWithdrawal(_receipt, _signatures);
+  }
+
+  /**
+   * @inheritdoc IMainchainGatewayV3
+   */
+  function bulkSubmitWithdrawal(
+    Transfer.Receipt[] calldata _receipts,
+    Signature[][] calldata _signatures
+  ) external virtual whenNotPaused returns (bool[] memory _locked) {
+    if (_receipts.length != _signatures.length) {
+      revert ErrReceiptAndSignatureLengthsMismatch();
+    }
+
+    _locked = new bool[](_receipts.length);
+    for (uint256 _i; _i < _receipts.length;) {
+      _locked[_i] = _submitWithdrawal(_receipts[_i], _signatures[_i]);
+
+      unchecked {
+        _i++;
+      }
+    }
+
+    return _locked;
   }
 
   /**
@@ -350,8 +407,6 @@ contract MainchainGatewayV3 is
 
       _request.tokenAddr = _weth;
     } else {
-      if (msg.value != 0) revert ErrInvalidRequest();
-
       _token = getRoninToken(_request.tokenAddr);
       if (_token.erc != _request.info.erc) revert ErrInvalidTokenStandard();
 
