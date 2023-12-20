@@ -13,6 +13,7 @@ import { IWETH } from "@ronin/contracts/interfaces/IWETH.sol";
 import { SignatureConsumer } from "@ronin/contracts/interfaces/consumers/SignatureConsumer.sol";
 import { WETH } from "solady/tokens/WETH.sol";
 import { MockERC721 } from "solady/../test/utils/mocks/MockERC721.sol";
+import { MockERC1155 } from "solady/../test/utils/mocks/MockERC1155.sol";
 import { ErrInvalidRequest } from "@ronin/contracts/utils/CommonErrors.sol";
 
 contract MockBridgeManager {
@@ -28,20 +29,24 @@ contract MockBridgeManager {
 contract MainchainGateway_BulkTransaction_Test is Base_Test {
   event DepositRequested(bytes32 receiptHash, TransferPackage.Receipt receipt);
   event Transfer(address indexed from, address indexed to, uint256 indexed id);
+  event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value);
 
   MainchainGatewayV3 internal _mainchainGateway;
   WETH internal _weth;
   MockERC721 internal _mockERC721;
+  MockERC1155 internal _mockERC1155;
+  MockBridgeManager internal _mockBridgeManager;
 
-  address internal sender = address(2);
-  address internal recipient = address(1);
+  address internal _sender = address(2);
+  address internal _recipient = address(1);
 
   function setUp() public virtual {
     address mainchainGatewayImpl = address(new MainchainGatewayV3());
-    address _proxyAdmin = vm.addr(1);
     address _roleSetter = vm.addr(1);
     _weth = new WETH();
     _mockERC721 = new MockERC721();
+    _mockERC1155 = new MockERC1155();
+    _mockBridgeManager = new MockBridgeManager();
 
     address[][3] memory _addresses;
     _addresses[0] = new address[](2);
@@ -114,16 +119,34 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
 
     _mainchainGateway = MainchainGatewayV3(
       payable(address(
-        new TransparentUpgradeableProxyV2(mainchainGatewayImpl, _proxyAdmin, _data)
+        new TransparentUpgradeableProxyV2(mainchainGatewayImpl, address(_mockBridgeManager), _data)
       ))
     );
 
-    _mainchainGateway.initializeV2(address(new MockBridgeManager()));
+    _mainchainGateway.initializeV2(address(_mockBridgeManager));
+
+    address[] memory _mainchainERC1155 = new address[](1);
+    _mainchainERC1155[0] = address(_mockERC1155);
+    address[] memory _roninchainERC1155 = new address[](1);
+    // dummy address
+    _roninchainERC1155[0] = address(1);
+    Token.Standard[] memory _standardERC1155 = new Token.Standard[](1);
+    _standardERC1155[0] = Token.Standard.ERC1155;
+
+    bytes memory innerData = abi.encodeCall(IMainchainGatewayV3.mapTokens, (
+      _mainchainERC1155,
+      _roninchainERC1155,
+      _standardERC1155
+    ));
+    bytes memory proxyData = abi.encodeWithSignature("functionDelegateCall(bytes)", innerData);
+
+    vm.prank(address(_mockBridgeManager));
+    address(_mainchainGateway).call(proxyData);
   }
 
   function test_RevertWhen_2NativeTokenDepositRequests() external {
     TransferPackage.Request memory _request = TransferPackage.Request({
-      recipientAddr: recipient,
+      recipientAddr: _recipient,
       tokenAddr: address(0),
       info: Token.Info({erc: Token.Standard.ERC20, id: 0, quantity: 100})
     });
@@ -137,22 +160,22 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
   }
 
   function test_RevertWhen_NonNativeRequestWithMsgValue() external {
-    vm.deal(sender, 100);
+    vm.deal(_sender, 100);
 
-    _mockERC721.mint(sender, 0);
-    _mockERC721.mint(sender, 1);
-    vm.startPrank(sender);
+    _mockERC721.mint(_sender, 0);
+    _mockERC721.mint(_sender, 1);
+    vm.startPrank(_sender);
 
     _mockERC721.setApprovalForAll(address(_mainchainGateway), true);
 
     TransferPackage.Request memory _request1 = TransferPackage.Request({
-      recipientAddr: recipient,
+      recipientAddr: _recipient,
       tokenAddr: address(_mockERC721),
       info: Token.Info({erc: Token.Standard.ERC721, id: 0, quantity: 0})
     });
 
     TransferPackage.Request memory _request2 = TransferPackage.Request({
-      recipientAddr: recipient,
+      recipientAddr: _recipient,
       tokenAddr: address(_mockERC721),
       info: Token.Info({erc: Token.Standard.ERC721, id: 1, quantity: 0})
     });
@@ -171,20 +194,20 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
   }
 
   function test_BulkDeposit_ERC721() external {
-    _mockERC721.mint(sender, 0);
-    _mockERC721.mint(sender, 1);
-    vm.startPrank(sender);
+    _mockERC721.mint(_sender, 0);
+    _mockERC721.mint(_sender, 1);
+    vm.startPrank(_sender);
 
     _mockERC721.setApprovalForAll(address(_mainchainGateway), true);
 
     TransferPackage.Request memory _request1 = TransferPackage.Request({
-      recipientAddr: recipient,
+      recipientAddr: _recipient,
       tokenAddr: address(_mockERC721),
       info: Token.Info({erc: Token.Standard.ERC721, id: 0, quantity: 0})
     });
 
     TransferPackage.Request memory _request2 = TransferPackage.Request({
-      recipientAddr: recipient,
+      recipientAddr: _recipient,
       tokenAddr: address(_mockERC721),
       info: Token.Info({erc: Token.Standard.ERC721, id: 1, quantity: 0})
     });
@@ -195,25 +218,21 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
 
     TransferPackage.Receipt memory _receipt1 = TransferPackage.into_deposit_receipt(
       _request1,
-      sender,
+      _sender,
       0,
-      recipient,
+      _recipient,
       2021
     );
     TransferPackage.Receipt memory _receipt2 = TransferPackage.into_deposit_receipt(
       _request2,
-      sender,
+      _sender,
       1,
-      recipient,
+      _recipient,
       2021
     );
     vm.expectEmit(true, true, true, true);
-    emit Transfer(sender, address(_mainchainGateway), 0);
-    vm.expectEmit(false, false, false, true);
     emit DepositRequested(TransferPackage.hash(_receipt1), _receipt1);
     vm.expectEmit(true, true, true, true);
-    emit Transfer(sender, address(_mainchainGateway), 1);
-    vm.expectEmit(false, false, false, true);
     emit DepositRequested(TransferPackage.hash(_receipt2), _receipt2);
 
     _mainchainGateway.bulkRequestDepositFor(_requests);
@@ -225,22 +244,20 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
   }
 
   function test_BulkDeposit_ERC20() external {
-    vm.deal(sender, 100);
+    vm.deal(_sender, 100);
 
-    vm.startPrank(sender);
+    vm.startPrank(_sender);
     _weth.deposit{value: 100}();
     _weth.approve(address(_mainchainGateway), 100);
 
-    console.log(address(_weth));
-
     TransferPackage.Request memory _request1 = TransferPackage.Request({
-      recipientAddr: recipient,
+      recipientAddr: _recipient,
       tokenAddr: address(_weth),
       info: Token.Info({erc: Token.Standard.ERC20, id: 0, quantity: 30})
     });
 
     TransferPackage.Request memory _request2 = TransferPackage.Request({
-      recipientAddr: recipient,
+      recipientAddr: _recipient,
       tokenAddr: address(_weth),
       info: Token.Info({erc: Token.Standard.ERC20, id: 0, quantity: 70})
     });
@@ -255,23 +272,86 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
     vm.stopPrank();
   }
 
-  function test_BulkDeposit_ERC721AndNativeToken() external {
-    vm.deal(sender, 100);
+  function test_BulkDeposit_ERC1155() external {
+    _mockERC1155.mint(_sender, 0, 10, "");
+    _mockERC1155.mint(_sender, 1, 20, "");
 
-    _mockERC721.mint(sender, 0);
-    _mockERC721.mint(sender, 1);
-    vm.startPrank(sender);
+    vm.startPrank(_sender);
+    _mockERC1155.setApprovalForAll(address(_mainchainGateway),  true);
+    TransferPackage.Request memory _request1 = TransferPackage.Request({
+      recipientAddr: _recipient,
+      tokenAddr: address(_mockERC1155),
+      info: Token.Info({erc: Token.Standard.ERC1155, id: 0, quantity: 10})
+    });
+
+    TransferPackage.Request memory _request2 = TransferPackage.Request({
+      recipientAddr: _recipient,
+      tokenAddr: address(_mockERC1155),
+      info: Token.Info({erc: Token.Standard.ERC1155, id: 1, quantity: 15})
+    });
+
+    TransferPackage.Request memory _request3 = TransferPackage.Request({
+      recipientAddr: _recipient,
+      tokenAddr: address(_mockERC1155),
+      info: Token.Info({erc: Token.Standard.ERC1155, id: 1, quantity: 5})
+    });
+
+    TransferPackage.Request[] memory _requests = new TransferPackage.Request[](3);
+    _requests[0] = _request1;
+    _requests[1] = _request2;
+    _requests[2] = _request3;
+
+    TransferPackage.Receipt memory _receipt1 = TransferPackage.into_deposit_receipt(
+      _request1,
+      _sender,
+      0,
+      _recipient,
+      2021
+    );
+    TransferPackage.Receipt memory _receipt2 = TransferPackage.into_deposit_receipt(
+      _request2,
+      _sender,
+      1,
+      _recipient,
+      2021
+    );
+    TransferPackage.Receipt memory _receipt3 = TransferPackage.into_deposit_receipt(
+      _request3,
+      _sender,
+      2,
+      _recipient,
+      2021
+    );
+    vm.expectEmit(true, true, true, true);
+    emit DepositRequested(TransferPackage.hash(_receipt1), _receipt1);
+    vm.expectEmit(true, true, true, true);
+    emit DepositRequested(TransferPackage.hash(_receipt2), _receipt2);
+    vm.expectEmit(true, true, true, true);
+    emit DepositRequested(TransferPackage.hash(_receipt3), _receipt3);
+
+    _mainchainGateway.bulkRequestDepositFor(_requests);
+    assertEq(_mockERC1155.balanceOf(address(_mainchainGateway), 0), 10);
+    assertEq(_mockERC1155.balanceOf(address(_mainchainGateway), 1), 20);
+    vm.stopPrank();
+  }
+
+  function test_BulkDeposit_ERC721AndNativeToken() external {
+    vm.deal(_sender, 100);
+
+    _mockERC721.mint(_sender, 0);
+    _mockERC721.mint(_sender, 1);
+    vm.startPrank(_sender);
 
     _mockERC721.setApprovalForAll(address(_mainchainGateway), true);
 
     TransferPackage.Request memory _request1 = TransferPackage.Request({
-      recipientAddr: recipient,
+      recipientAddr: _recipient,
       tokenAddr: address(0),
       info: Token.Info({erc: Token.Standard.ERC20, id: 0, quantity: 100})
     });
 
     TransferPackage.Request memory _request2 = TransferPackage.Request({
-      recipientAddr: recipient,
+      recipientAddr: _recipient,
       tokenAddr: address(_mockERC721),
       info: Token.Info({erc: Token.Standard.ERC721, id: 1, quantity: 0})
     });
@@ -282,23 +362,21 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
     _request1.tokenAddr = address(_weth);
     TransferPackage.Receipt memory _receipt1 = TransferPackage.into_deposit_receipt(
       _request1,
-      sender,
+      _sender,
       0,
-      recipient,
+      _recipient,
       2021
     );
     _request1.tokenAddr = address(0);
     TransferPackage.Receipt memory _receipt2 = TransferPackage.into_deposit_receipt(
       _request2,
-      sender,
+      _sender,
       1,
-      recipient,
+      _recipient,
       2021
     );
     vm.expectEmit(false, false, false, true);
     emit DepositRequested(TransferPackage.hash(_receipt1), _receipt1);
-    vm.expectEmit(true, true, true, true);
-    emit Transfer(sender, address(_mainchainGateway), 1);
     vm.expectEmit(false, false, false, true);
     emit DepositRequested(TransferPackage.hash(_receipt2), _receipt2);
 
@@ -315,13 +393,13 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
       id: 0,
       kind: TransferPackage.Kind.Withdrawal,
       mainchain: Token.Owner({
-        addr: sender,
+        addr: _sender,
         tokenAddr: address(_mockERC721),
         chainId: 0
       }),
       ronin: Token.Owner({
-        addr: sender,
-        tokenAddr: recipient,
+        addr: _sender,
+        tokenAddr: _recipient,
         chainId: 2021
       }),
       info: Token.Info({
@@ -343,18 +421,20 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
   // need to input a valid ECDSA signature without needing to care for the recoved address.
   function test_BulkSubmitWithdrawal() external {
     vm.deal(address(_mainchainGateway), 100);
+    // _mainchainGateway will mint 70 more tokens to serve the withdrawal request
+    _mockERC1155.mint(address(_mainchainGateway), 0, 30, "");
 
     TransferPackage.Receipt memory _receipt1 = TransferPackage.Receipt({
       id: 0,
       kind: TransferPackage.Kind.Withdrawal,
       mainchain: Token.Owner({
-        addr: sender,
+        addr: _sender,
         tokenAddr: address(_mockERC721),
         chainId: 31337
       }),
       ronin: Token.Owner({
-        addr: sender,
-        tokenAddr: recipient,
+        addr: _sender,
+        tokenAddr: _recipient,
         chainId: 2021
       }),
       info: Token.Info({
@@ -368,13 +448,13 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
       id: 1,
       kind: TransferPackage.Kind.Withdrawal,
       mainchain: Token.Owner({
-        addr: sender,
+        addr: _sender,
         tokenAddr: address(_mockERC721),
         chainId: 31337
       }),
       ronin: Token.Owner({
-        addr: sender,
-        tokenAddr: recipient,
+        addr: _sender,
+        tokenAddr: _recipient,
         chainId: 2021
       }),
       info: Token.Info({
@@ -388,13 +468,13 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
       id: 2,
       kind: TransferPackage.Kind.Withdrawal,
       mainchain: Token.Owner({
-        addr: sender,
+        addr: _sender,
         tokenAddr: address(_weth),
         chainId: 31337
       }),
       ronin: Token.Owner({
-        addr: sender,
-        tokenAddr: recipient,
+        addr: _sender,
+        tokenAddr: _recipient,
         chainId: 2021
       }),
       info: Token.Info({
@@ -404,13 +484,34 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
       })
     });
 
-    TransferPackage.Receipt[] memory _receipts = new TransferPackage.Receipt[](3);
+    TransferPackage.Receipt memory _receipt4 = TransferPackage.Receipt({
+      id: 3,
+      kind: TransferPackage.Kind.Withdrawal,
+      mainchain: Token.Owner({
+        addr: _sender,
+        tokenAddr: address(_mockERC1155),
+        chainId: 31337
+      }),
+      ronin: Token.Owner({
+        addr: _sender,
+        tokenAddr: _recipient,
+        chainId: 2021
+      }),
+      info: Token.Info({
+        erc: Token.Standard.ERC1155,
+        id: 0,
+        quantity: 100
+      })
+    });
+
+    TransferPackage.Receipt[] memory _receipts = new TransferPackage.Receipt[](4);
     _receipts[0] = _receipt1;
     _receipts[1] = _receipt2;
     _receipts[2] = _receipt3;
+    _receipts[3] = _receipt4;
 
     // Random but valid signatures, random addresses will be recovered
-    SignatureConsumer.Signature[][] memory _signatures = new SignatureConsumer.Signature[][](3);
+    SignatureConsumer.Signature[][] memory _signatures = new SignatureConsumer.Signature[][](4);
     _signatures[0] = new SignatureConsumer.Signature[](1);
     _signatures[0][0] = SignatureConsumer.Signature({
       v: uint8(28),
@@ -419,10 +520,24 @@ contract MainchainGateway_BulkTransaction_Test is Base_Test {
     });
     _signatures[1] = _signatures[0];
     _signatures[2] = _signatures[0];
+    _signatures[3] = _signatures[0];
 
     _mainchainGateway.bulkSubmitWithdrawal(_receipts, _signatures);
-    assertEq(sender.balance, 100);
-    assertEq(_mockERC721.ownerOf(4), sender);
-    assertEq(_mockERC721.ownerOf(5), sender);
+    assertEq(_sender.balance, 100);
+    assertEq(_mockERC721.ownerOf(4), _sender);
+    assertEq(_mockERC721.ownerOf(5), _sender);
+    assertEq(_mockERC1155.balanceOf(_sender, 0), 100);
+    assertEq(_mockERC1155.balanceOf(address(_mainchainGateway), 0), 0);
+  }
+
+  function test_RevertWhen_ERC1155_ZeroQuantity() external {
+    TransferPackage.Request memory _request = TransferPackage.Request({
+      recipientAddr: _recipient,
+      tokenAddr: address(_mockERC1155),
+      info: Token.Info({erc: Token.Standard.ERC1155, id: 0, quantity: 0})
+    });
+
+    vm.expectRevert(Token.ErrInvalidInfo.selector);
+    _mainchainGateway.requestDepositFor(_request);
   }
 }

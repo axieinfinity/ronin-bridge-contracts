@@ -3,7 +3,11 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "../interfaces/IWETH.sol";
+import "../interfaces/IERC20Mintable.sol";
+import "../interfaces/IERC721Mintable.sol";
+import "../interfaces/IERC1155Mintable.sol";
 
 library Token {
   /// @dev Error indicating that the provided information is invalid.
@@ -14,6 +18,9 @@ library Token {
 
   /// @dev Error indicating that the minting of ERC721 tokens has failed.
   error ErrERC721MintingFailed();
+
+  /// @dev Error indicating that the minting of ERC1155 tokens has failed.
+  error ErrERC1155MintingFailed();
 
   /// @dev Error indicating that an unsupported standard is encountered.
   error ErrUnsupportedStandard();
@@ -37,13 +44,15 @@ library Token {
 
   enum Standard {
     ERC20,
-    ERC721
+    ERC721,
+    ERC1155
   }
 
   struct Info {
     Standard erc;
     // For ERC20:  the id must be 0 and the quantity is larger than 0.
     // For ERC721: the quantity must be 0.
+    // For ERC1155: the quantity is larger than 0.
     uint256 id;
     uint256 quantity;
   }
@@ -72,7 +81,8 @@ library Token {
   function validate(Info memory _info) internal pure {
     if (
       !((_info.erc == Standard.ERC20 && _info.quantity > 0 && _info.id == 0) ||
-        (_info.erc == Standard.ERC721 && _info.quantity == 0))
+        (_info.erc == Standard.ERC721 && _info.quantity == 0) ||
+        (_info.erc == Standard.ERC1155 && _info.quantity > 0))
     ) revert ErrInvalidInfo();
   }
 
@@ -87,11 +97,12 @@ library Token {
     bool _success;
     bytes memory _data;
     if (_info.erc == Standard.ERC20) {
-      (_success, _data) = _token.call(abi.encodeWithSelector(IERC20.transferFrom.selector, _from, _to, _info.quantity));
+      (_success, _data) = _token.call(abi.encodeCall(IERC20.transferFrom, (_from, _to, _info.quantity)));
       _success = _success && (_data.length == 0 || abi.decode(_data, (bool)));
     } else if (_info.erc == Standard.ERC721) {
-      // bytes4(keccak256("transferFrom(address,address,uint256)"))
-      (_success, ) = _token.call(abi.encodeWithSelector(0x23b872dd, _from, _to, _info.id));
+      (_success, ) = _token.call(abi.encodeCall(IERC721.transferFrom, (_from, _to, _info.id)));
+    } else if (_info.erc == Standard.ERC1155) {
+      (_success, ) = _token.call(abi.encodeCall(IERC1155.safeTransferFrom, (_from, _to, _info.id, _info.quantity, "")));
     } else revert ErrUnsupportedStandard();
 
     if (!_success) revert ErrTokenCouldNotTransferFrom(_info, _from, _to, _token);
@@ -101,7 +112,7 @@ library Token {
    * @dev Transfers ERC721 token and returns the result.
    */
   function tryTransferERC721(address _token, address _to, uint256 _id) internal returns (bool _success) {
-    (_success, ) = _token.call(abi.encodeWithSelector(IERC721.transferFrom.selector, address(this), _to, _id));
+    (_success, ) = _token.call(abi.encodeCall(IERC721.transferFrom, (address(this), _to, _id)));
   }
 
   /**
@@ -109,8 +120,21 @@ library Token {
    */
   function tryTransferERC20(address _token, address _to, uint256 _quantity) internal returns (bool _success) {
     bytes memory _data;
-    (_success, _data) = _token.call(abi.encodeWithSelector(IERC20.transfer.selector, _to, _quantity));
+    (_success, _data) = _token.call(abi.encodeCall(IERC20.transfer, (_to, _quantity)));
     _success = _success && (_data.length == 0 || abi.decode(_data, (bool)));
+  }
+
+  /**
+   * @dev Transfers ERC1155 token and returns the result.
+   */
+  function tryTransferERC1155(address _token, address _to, uint256 _id, uint256 _quantity) internal returns (bool _success) {
+    // safeTransferFrom(address _from, address _to, uint256 _id, uint256 _value, bytes calldata _data)
+    (_success, ) = _token.call(abi.encodeCall(IERC1155.safeTransferFrom, (
+      address(this),
+      _to,
+      _id,
+      _quantity,
+      "")));
   }
 
   /**
@@ -122,6 +146,8 @@ library Token {
       _success = tryTransferERC20(_token, _to, _info.quantity);
     } else if (_info.erc == Standard.ERC721) {
       _success = tryTransferERC721(_token, _to, _info.id);
+    } else if (_info.erc == Standard.ERC1155) {
+      _success = tryTransferERC1155(_token, _to, _info.id, _info.quantity);
     } else revert ErrUnsupportedStandard();
 
     if (!_success) revert ErrTokenCouldNotTransfer(_info, _to, _token);
@@ -150,18 +176,25 @@ library Token {
       uint256 _balance = IERC20(_token).balanceOf(address(this));
 
       if (_balance < _info.quantity) {
-        // bytes4(keccak256("mint(address,uint256)"))
-        (_success, ) = _token.call(abi.encodeWithSelector(0x40c10f19, address(this), _info.quantity - _balance));
+        (_success, ) = _token.call(abi.encodeCall(IERC20Mintable.mint, (address(this), _info.quantity - _balance)));
         if (!_success) revert ErrERC20MintingFailed();
       }
 
       transfer(_info, _to, _token);
     } else if (_info.erc == Token.Standard.ERC721) {
       if (!tryTransferERC721(_token, _to, _info.id)) {
-        // bytes4(keccak256("mint(address,uint256)"))
-        (_success, ) = _token.call(abi.encodeWithSelector(0x40c10f19, _to, _info.id));
+        (_success, ) = _token.call(abi.encodeCall(IERC721Mintable.mint, (_to, _info.id)));
         if (!_success) revert ErrERC721MintingFailed();
       }
+    } else if (_info.erc == Token.Standard.ERC1155) {
+      uint256 _balance = IERC1155(_token).balanceOf(address(this), _info.id);
+
+      if (_balance < _info.quantity) {
+        (_success, ) = _token.call(abi.encodeCall(IERC1155Mintable.mint, (address(this), _info.id, _info.quantity - _balance, "")));
+        if (!_success) revert ErrERC1155MintingFailed();
+      }
+
+      transfer(_info, _to, _token);
     } else revert ErrUnsupportedStandard();
   }
 

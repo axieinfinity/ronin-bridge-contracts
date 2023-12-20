@@ -3,6 +3,8 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 import { IBridgeManager } from "../interfaces/bridge/IBridgeManager.sol";
 import { IBridgeManagerCallback } from "../interfaces/bridge/IBridgeManagerCallback.sol";
 import { HasContracts, ContractType } from "../extensions/collections/HasContracts.sol";
@@ -15,7 +17,9 @@ contract MainchainGatewayV3 is
   Initializable,
   AccessControlEnumerable,
   IMainchainGatewayV3,
-  HasContracts
+  HasContracts,
+  IERC721Receiver,
+  IERC1155Receiver
 {
   using Token for Token.Info;
   using Transfer for Transfer.Request;
@@ -334,7 +338,7 @@ contract MainchainGatewayV3 is
 
     if (withdrawalHash[_id] != 0) revert ErrQueryForProcessedWithdrawal();
 
-    if (!(_receipt.info.erc == Token.Standard.ERC721 || !_reachedWithdrawalLimit(_tokenAddr, _quantity))) {
+    if (_receipt.info.erc == Token.Standard.ERC20 && _reachedWithdrawalLimit(_tokenAddr, _quantity)) {
       revert ErrReachedDailyWithdrawalLimit();
     }
 
@@ -510,5 +514,43 @@ contract MainchainGatewayV3 is
    */
   function _getWeight(address _addr) internal view returns (uint256) {
     return IBridgeManager(getContract(ContractType.BRIDGE_MANAGER)).getBridgeOperatorWeight(_addr);
+  }
+
+  /**
+   * @inheritdoc IERC1155Receiver
+   */
+  function onERC1155Received(
+    address /* operator */,
+    address /* from */,
+    uint256 /* id */,
+    uint256 /* value */,
+    bytes calldata /* data */
+  ) external pure returns (bytes4) {
+    return IERC1155Receiver.onERC1155Received.selector;
+  }
+
+  /**
+   * @inheritdoc IERC1155Receiver
+   */
+  function onERC1155BatchReceived(
+    address /* operator */,
+    address /* from */,
+    uint256[] calldata /* ids */,
+    uint256[] calldata /* values */,
+    bytes calldata /* data */
+  ) external pure returns (bytes4) {
+    return IERC1155Receiver.onERC1155Received.selector;
+  }
+
+  /**
+   * @inheritdoc IERC721Receiver
+   */
+  function onERC721Received(
+    address /* operator */,
+    address /* from */,
+    uint256 /* tokenId */,
+    bytes calldata /* data */
+  ) external pure returns (bytes4) {
+    return IERC721Receiver.onERC721Received.selector;
   }
 }

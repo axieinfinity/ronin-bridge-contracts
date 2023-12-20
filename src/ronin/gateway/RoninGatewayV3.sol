@@ -3,6 +3,8 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 import "../../extensions/GatewayV3.sol";
 import "../../extensions/collections/HasContracts.sol";
 import "../../extensions/MinimumWithdrawal.sol";
@@ -22,7 +24,9 @@ contract RoninGatewayV3 is
   AccessControlEnumerable,
   VoteStatusConsumer,
   IRoninGatewayV3,
-  HasContracts
+  HasContracts,
+  IERC721Receiver,
+  IERC1155Receiver
 {
   using Token for Token.Info;
   using Transfer for Transfer.Request;
@@ -527,5 +531,43 @@ contract RoninGatewayV3 is
    */
   function _minimumTrustedVoteWeight(uint256 _totalTrustedWeight) internal view virtual returns (uint256) {
     return (_trustedNum * _totalTrustedWeight + _trustedDenom - 1) / _trustedDenom;
+  }
+
+  /**
+   * @inheritdoc IERC1155Receiver
+   */
+  function onERC1155Received(
+    address /* operator */,
+    address /* from */,
+    uint256 /* id */,
+    uint256 /* value */,
+    bytes calldata /* data */
+  ) external pure returns (bytes4) {
+    return IERC1155Receiver.onERC1155Received.selector;
+  }
+
+  /**
+   * @inheritdoc IERC1155Receiver
+   */
+  function onERC1155BatchReceived(
+    address /* operator */,
+    address /* from */,
+    uint256[] calldata /* ids */,
+    uint256[] calldata /* values */,
+    bytes calldata /* data */
+  ) external pure returns (bytes4) {
+    return IERC1155Receiver.onERC1155Received.selector;
+  }
+
+  /**
+   * @inheritdoc IERC721Receiver
+   */
+  function onERC721Received(
+    address /* operator */,
+    address /* from */,
+    uint256 /* tokenId */,
+    bytes calldata /* data */
+  ) external pure returns (bytes4) {
+    return IERC721Receiver.onERC721Received.selector;
   }
 }
