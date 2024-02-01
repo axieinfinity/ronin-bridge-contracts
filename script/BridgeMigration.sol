@@ -10,6 +10,7 @@ import { IGeneralConfigExtended } from "./IGeneralConfigExtended.sol";
 import { Network } from "./utils/Network.sol";
 import { Contract } from "./utils/Contract.sol";
 import { DefaultNetwork } from "foundry-deployment-kit/utils/DefaultNetwork.sol";
+import { TNetwork } from "foundry-deployment-kit/types/Types.sol";
 
 contract BridgeMigration is BaseMigration {
   using ErrorHandler for bool;
@@ -46,8 +47,11 @@ contract BridgeMigration is BaseMigration {
     bytes[] memory calldatas,
     uint256[] memory gasAmounts
   ) internal {
-    _config.createFork(Network.EthMainnet.key());
-    _config.switchTo(Network.EthMainnet.key());
+    TNetwork roninNetwork = _config.getNetworkByChainId(block.chainid);
+    TNetwork companionNetwork =  _config.getCompanionNetwork(roninNetwork).key();
+
+    _config.createFork(companionNetwork);
+    _config.switchTo(companionNetwork);
 
     address mainchainBridgeManager = _config.getAddressFromCurrentNetwork(Contract.MainchainBridgeManager.key());
     uint256 snapshotId = vm.snapshot();
@@ -57,7 +61,7 @@ contract BridgeMigration is BaseMigration {
     vm.stopPrank();
     vm.revertTo(snapshotId);
 
-    _config.switchTo(DefaultNetwork.RoninMainnet.key());
+    _config.switchTo(roninNetwork);
   }
 
  function _verifyProposalGasAmount(
@@ -67,6 +71,8 @@ contract BridgeMigration is BaseMigration {
     bytes[] memory calldatas,
     uint256[] memory gasAmounts
   ) private {
+    console2.log("Verifying proposal gas amount...");
+
     for (uint256 i; i < targets.length; i++) {
       vm.deal(address(bridgeManager), values[i]);
       uint256 gasUsed = gasleft();
