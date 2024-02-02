@@ -16,7 +16,7 @@ contract EpochE2_VoteIsNotApprovedInLastEpoch_BridgeTracking_Test is BaseIntegra
 
   function setUp() public virtual override {
     super.setUp();
-    _config.switchTo(Network.RoninLocal.key());
+    // _config.switchTo(Network.RoninLocal.key());
     vm.coinbase(makeAddr("coin-base-addr"));
 
     // upgrade ronin gateway v3
@@ -28,7 +28,7 @@ contract EpochE2_VoteIsNotApprovedInLastEpoch_BridgeTracking_Test is BaseIntegra
 
     vm.deal(address(_bridgeReward), 10 ether);
 
-    _setTimestampToPeriodEnding();
+    _fastForwardToNextDay();
     _wrapUpEpochAndMine();
 
     _period = _validatorSet.currentPeriod();
@@ -92,7 +92,7 @@ contract EpochE2_VoteIsNotApprovedInLastEpoch_BridgeTracking_Test is BaseIntegra
   function test_epochE_continueVotingForVoteInE2_notRecordInNextPeriod() public {
     test_epochE1_recordForWhoVoteLately_onceRequestIsApproved();
 
-    _setTimestampToPeriodEnding();
+    _fastForwardToNextDay();
     _wrapUpEpochAndMine();
 
     uint256 lastPeriod = _period;

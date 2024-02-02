@@ -14,7 +14,7 @@ contract EmergencyAction_PauseEnforcer_Test is BaseIntegration_Test {
 
   // Should be able to emergency pause
   function test_EmergencyPause_RoninGatewayV3() public {
-    _config.switchTo(Network.RoninLocal.key());
+    // _config.switchTo(Network.RoninLocal.key());
     vm.prank(_param.roninPauseEnforcer.sentries[0]);
     _roninPauseEnforcer.triggerPause();
 
@@ -28,12 +28,8 @@ contract EmergencyAction_PauseEnforcer_Test is BaseIntegration_Test {
     Transfer.Receipt memory receipt = Transfer.Receipt({
       id: 0,
       kind: Transfer.Kind.Deposit,
-      ronin: Token.Owner({ addr: makeAddr("recipient"), tokenAddr: address(_roninWeth), chainId: _param.test.roninChainId }),
-      mainchain: Token.Owner({
-        addr: makeAddr("requester"),
-        tokenAddr: address(_mainchainWeth),
-        chainId: _param.test.mainchainChainId
-      }),
+      ronin: Token.Owner({ addr: makeAddr("recipient"), tokenAddr: address(_roninWeth), chainId: block.chainid }),
+      mainchain: Token.Owner({ addr: makeAddr("requester"), tokenAddr: address(_mainchainWeth), chainId: block.chainid }),
       info: Token.Info({ erc: Token.Standard.ERC20, id: 0, quantity: 100 })
     });
 
@@ -69,12 +65,8 @@ contract EmergencyAction_PauseEnforcer_Test is BaseIntegration_Test {
     Transfer.Receipt memory receipt = Transfer.Receipt({
       id: 0,
       kind: Transfer.Kind.Deposit,
-      ronin: Token.Owner({ addr: makeAddr("recipient"), tokenAddr: address(_roninWeth), chainId: _param.test.roninChainId }),
-      mainchain: Token.Owner({
-        addr: makeAddr("requester"),
-        tokenAddr: address(_mainchainWeth),
-        chainId: _param.test.mainchainChainId
-      }),
+      ronin: Token.Owner({ addr: makeAddr("recipient"), tokenAddr: address(_roninWeth), chainId: block.chainid }),
+      mainchain: Token.Owner({ addr: makeAddr("requester"), tokenAddr: address(_mainchainWeth), chainId: block.chainid }),
       info: Token.Info({ erc: Token.Standard.ERC20, id: 0, quantity: 100 })
     });
 

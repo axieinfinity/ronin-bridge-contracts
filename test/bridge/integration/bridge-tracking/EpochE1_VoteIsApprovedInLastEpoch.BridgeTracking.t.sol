@@ -16,7 +16,7 @@ contract EpochE1_VoteIsApprovedInLastEpoch_BridgeTracking_Test is BaseIntegratio
 
   function setUp() public virtual override {
     super.setUp();
-    _config.switchTo(Network.RoninLocal.key());
+    // _config.switchTo(Network.RoninLocal.key());
     vm.coinbase(makeAddr("coin-base-addr"));
 
     _operators.push(_param.roninBridgeManager.bridgeOperators[0]);
@@ -33,7 +33,7 @@ contract EpochE1_VoteIsApprovedInLastEpoch_BridgeTracking_Test is BaseIntegratio
 
     vm.deal(address(_bridgeReward), 10 ether);
 
-    _setTimestampToPeriodEnding();
+    _fastForwardToNextDay();
     _wrapUpEpochAndMine();
 
     _period = _validatorSet.currentPeriod();
@@ -79,7 +79,7 @@ contract EpochE1_VoteIsApprovedInLastEpoch_BridgeTracking_Test is BaseIntegratio
     test_epochE1_notRecordVoteAndBallot_voteInLastEpoch();
 
     uint256 lastPeriod = _period;
-    _setTimestampToPeriodEnding();
+    _fastForwardToNextDay();
     _wrapUpEpochAndMine();
 
     uint256 newPeriod = _validatorSet.currentPeriod();
@@ -144,7 +144,7 @@ contract EpochE1_VoteIsApprovedInLastEpoch_BridgeTracking_Test is BaseIntegratio
     assertEq(_bridgeTracking.totalBallotOf(_period, _param.roninBridgeManager.bridgeOperators[3]), expectedTotalVotes);
     assertEq(_bridgeTracking.totalBallotOf(_period, _param.roninBridgeManager.bridgeOperators[4]), expectedTotalVotes);
 
-    _setTimestampToPeriodEnding();
+    _fastForwardToNextDay();
     _wrapUpEpochAndMine();
 
     assertEq(_bridgeTracking.totalVote(_period), expectedTotalVotes);
@@ -177,7 +177,7 @@ contract EpochE1_VoteIsApprovedInLastEpoch_BridgeTracking_Test is BaseIntegratio
   function test_epoch3E_metricOfNewPeriodGetReset() public {
     test_epoch3E_notRecordNewBallot_periodMetricIsFinalizedAsInEpoch2E_1();
 
-    _setTimestampToPeriodEnding();
+    _fastForwardToNextDay();
     _wrapUpEpochAndMine();
 
     uint256 lastPeriod = _period;

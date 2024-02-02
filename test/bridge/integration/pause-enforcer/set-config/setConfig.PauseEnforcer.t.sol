@@ -8,7 +8,7 @@ import "../../BaseIntegration.t.sol";
 contract SetConfig_PauseEnforcer_Test is BaseIntegration_Test {
   function setUp() public virtual override {
     super.setUp();
-    _config.switchTo(Network.RoninLocal.key());
+    // _config.switchTo(Network.RoninLocal.key());
   }
 
   function test_configPauseEnforcerContract() public {
