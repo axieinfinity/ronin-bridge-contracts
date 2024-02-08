@@ -63,6 +63,12 @@ contract GeneralConfig is BaseGeneralConfig, Utils {
     _contractNameMap[contractEnum.key()] = contractEnum.name();
   }
 
+  function getCompanionNetwork(TNetwork network) external pure returns (Network) {
+    if (network == DefaultNetwork.RoninTestnet.key()) return Network.Goerli;
+    if (network == DefaultNetwork.RoninMainnet.key()) return Network.EthMainnet;
+    revert("Network: Unknown companion network");
+  }
+
   function getSender() public view virtual override returns (address payable sender) {
     sender = _option.trezor ? payable(_trezorSender) : payable(_envSender);
     bool isLocalNetwork = getCurrentNetwork() == DefaultNetwork.Local.key();

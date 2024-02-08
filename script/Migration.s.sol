@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import { BaseMigrationV2 } from "./BaseMigrationV2.sol";
+import { BaseMigration } from "./BaseMigration.sol";
 import { DefaultNetwork } from "foundry-deployment-kit/utils/DefaultNetwork.sol";
 import { GeneralConfig } from "./GeneralConfig.sol";
 import { ISharedArgument } from "./interfaces/ISharedArgument.sol";
@@ -12,7 +12,7 @@ import { GlobalProposal } from "@ronin/contracts/libraries/GlobalProposal.sol";
 import { Token } from "@ronin/contracts/libraries/Token.sol";
 import { LibArray } from "./libraries/LibArray.sol";
 
-contract Migration is BaseMigrationV2, Utils {
+contract Migration is BaseMigration, Utils {
   ISharedArgument public constant config = ISharedArgument(address(CONFIG));
 
   function _configByteCode() internal virtual override returns (bytes memory) {

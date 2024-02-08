@@ -1,0 +1,5 @@
+Gateway
+    deposit
+        when user deposit
+    withdraw
+        when user withdraw
