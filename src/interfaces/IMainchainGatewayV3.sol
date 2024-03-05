@@ -27,6 +27,17 @@ interface IMainchainGatewayV3 is SignatureConsumer, MappedTokenConsumer {
    */
   error ErrQueryForInsufficientVoteWeight();
 
+  /**
+   * @dev Error indicating that a bulk deposit contains more than 1 native token
+   * deposit requests.
+   */
+  error ErrMoreThanOneNativeTokenRequests();
+
+  /**
+   * @dev Error indicating that the withdrawal receipts and signatures lengths mismatch.
+   */
+  error ErrReceiptAndSignatureLengthsMismatch();
+
   /// @dev Emitted when the deposit is requested
   event DepositRequested(bytes32 receiptHash, Transfer.Receipt receipt);
   /// @dev Emitted when the assets are withdrawn
@@ -77,6 +88,11 @@ interface IMainchainGatewayV3 is SignatureConsumer, MappedTokenConsumer {
   function requestDepositFor(Transfer.Request calldata _request) external payable;
 
   /**
+   * @dev Locks the assets and request multiple deposits.
+   */
+  function bulkRequestDepositFor(Transfer.Request[] calldata _requests) external payable;
+
+  /**
    * @dev Withdraws based on the receipt and the validator signatures.
    * Returns whether the withdrawal is locked.
    *
@@ -87,6 +103,18 @@ interface IMainchainGatewayV3 is SignatureConsumer, MappedTokenConsumer {
     Transfer.Receipt memory _receipt,
     Signature[] memory _signatures
   ) external returns (bool _locked);
+
+  /**
+   * @dev Bulk withdraws based on the receipt and the validator signatures.
+   * Returns whether the withdrawal is locked.
+   *
+   * Emits the `Withdrew` once the assets are released.
+   *
+   */
+  function bulkSubmitWithdrawal(
+    Transfer.Receipt[] memory _receipts,
+    Signature[][] memory _signatures
+  ) external returns (bool[] memory _locked);
 
   /**
    * @dev Approves a specific withdrawal.

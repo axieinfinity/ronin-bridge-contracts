@@ -3,6 +3,8 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 import { IBridgeManager } from "../interfaces/bridge/IBridgeManager.sol";
 import { IBridgeManagerCallback } from "../interfaces/bridge/IBridgeManagerCallback.sol";
 import { HasContracts, ContractType } from "../extensions/collections/HasContracts.sol";
@@ -15,7 +17,9 @@ contract MainchainGatewayV3 is
   Initializable,
   AccessControlEnumerable,
   IMainchainGatewayV3,
-  HasContracts
+  HasContracts,
+  IERC721Receiver,
+  IERC1155Receiver
 {
   using Token for Token.Info;
   using Transfer for Transfer.Request;
@@ -129,7 +133,41 @@ contract MainchainGatewayV3 is
    * @inheritdoc IMainchainGatewayV3
    */
   function requestDepositFor(Transfer.Request calldata _request) external payable virtual whenNotPaused {
+    // A non-native deposit request with msg.value is invalid
+    if (_request.tokenAddr != address(0) && msg.value != 0) {
+      revert ErrInvalidRequest();
+    }
     _requestDepositFor(_request, msg.sender);
+  }
+
+  /**
+   * @inheritdoc IMainchainGatewayV3
+   */
+  function bulkRequestDepositFor(Transfer.Request[] calldata _requests) external payable virtual whenNotPaused {
+    // The _requestDepositFor does not work correctly when there are
+    // more than 1 native Ether deposit request in the bulk deposit.
+    // So we need to check here and revert in that case.
+    bool _hasNativeTokenRequest = false;
+    for (uint256 _i; _i < _requests.length;) {
+      if (_requests[_i].tokenAddr == address(0)) {
+        if (_hasNativeTokenRequest) {
+          revert ErrMoreThanOneNativeTokenRequests();
+        } else {
+          _hasNativeTokenRequest = true;
+        }
+      }
+
+      _requestDepositFor(_requests[_i], msg.sender);
+
+      unchecked {
+        _i++;
+      }
+    }
+
+    // Non-native deposit requests with msg.value are invalid
+    if (!_hasNativeTokenRequest && msg.value != 0) {
+      revert ErrInvalidRequest();
+    }
   }
 
   /**
@@ -140,6 +178,29 @@ contract MainchainGatewayV3 is
     Signature[] calldata _signatures
   ) external virtual whenNotPaused returns (bool _locked) {
     return _submitWithdrawal(_receipt, _signatures);
+  }
+
+  /**
+   * @inheritdoc IMainchainGatewayV3
+   */
+  function bulkSubmitWithdrawal(
+    Transfer.Receipt[] calldata _receipts,
+    Signature[][] calldata _signatures
+  ) external virtual whenNotPaused returns (bool[] memory _locked) {
+    if (_receipts.length != _signatures.length) {
+      revert ErrReceiptAndSignatureLengthsMismatch();
+    }
+
+    _locked = new bool[](_receipts.length);
+    for (uint256 _i; _i < _receipts.length;) {
+      _locked[_i] = _submitWithdrawal(_receipts[_i], _signatures[_i]);
+
+      unchecked {
+        _i++;
+      }
+    }
+
+    return _locked;
   }
 
   /**
@@ -277,7 +338,7 @@ contract MainchainGatewayV3 is
 
     if (withdrawalHash[_id] != 0) revert ErrQueryForProcessedWithdrawal();
 
-    if (!(_receipt.info.erc == Token.Standard.ERC721 || !_reachedWithdrawalLimit(_tokenAddr, _quantity))) {
+    if (_receipt.info.erc == Token.Standard.ERC20 && _reachedWithdrawalLimit(_tokenAddr, _quantity)) {
       revert ErrReachedDailyWithdrawalLimit();
     }
 
@@ -350,8 +411,6 @@ contract MainchainGatewayV3 is
 
       _request.tokenAddr = _weth;
     } else {
-      if (msg.value != 0) revert ErrInvalidRequest();
-
       _token = getRoninToken(_request.tokenAddr);
       if (_token.erc != _request.info.erc) revert ErrInvalidTokenStandard();
 
@@ -455,5 +514,43 @@ contract MainchainGatewayV3 is
    */
   function _getWeight(address _addr) internal view returns (uint256) {
     return IBridgeManager(getContract(ContractType.BRIDGE_MANAGER)).getBridgeOperatorWeight(_addr);
+  }
+
+  /**
+   * @inheritdoc IERC1155Receiver
+   */
+  function onERC1155Received(
+    address /* operator */,
+    address /* from */,
+    uint256 /* id */,
+    uint256 /* value */,
+    bytes calldata /* data */
+  ) external pure returns (bytes4) {
+    return IERC1155Receiver.onERC1155Received.selector;
+  }
+
+  /**
+   * @inheritdoc IERC1155Receiver
+   */
+  function onERC1155BatchReceived(
+    address /* operator */,
+    address /* from */,
+    uint256[] calldata /* ids */,
+    uint256[] calldata /* values */,
+    bytes calldata /* data */
+  ) external pure returns (bytes4) {
+    return IERC1155Receiver.onERC1155Received.selector;
+  }
+
+  /**
+   * @inheritdoc IERC721Receiver
+   */
+  function onERC721Received(
+    address /* operator */,
+    address /* from */,
+    uint256 /* tokenId */,
+    bytes calldata /* data */
+  ) external pure returns (bytes4) {
+    return IERC721Receiver.onERC721Received.selector;
   }
 }
